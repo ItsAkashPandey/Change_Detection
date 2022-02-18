@@ -1,0 +1,70 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var area = ee.FeatureCollection("users/AkashPandey/Shapefiles/india_administrative_state_boundary");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var collection = ee.ImageCollection('COPERNICUS/S5P/OFFL/L3_NO2')
+  .select('tropospheric_NO2_column_number_density')
+  .filterDate('2021-09-15', '2021-09-30');
+  
+var scale = collection.first()
+ .projection().nominalScale();
+ 
+ print("pixel area", scale);
+ 
+//Convert mol/m2 to ton/m2. Here I have described
+//One mol of NO2 is 46.0055 g and 1 pound is 453.592 g so, Conversionfactor from mol to lbs
+//1 lb= 0.0005 ton. So, 0.1014 lbs/mole = (0.0005*0.1014) = 0.0000507
+//mean reducer factor -0.00051 (see satellite datasheet)
+// So, conversion factor = 0.0000507-0.00051 
+//https://gis.stackexchange.com/questions/353368/correlating-mol-m2-with-ton-and-lb/353375#35
+var mol_to_ton= collection.map(function (image) {
+  return image.multiply(0.000046);
+});
+
+var calif_clip = mol_to_ton.mean().clip(area);
+
+var band_viz2 = {
+  min: 0,
+  max: 0.000000002,
+  palette: ['black', 'blue', 'purple', 'cyan', 'green', 'yellow', 'red']
+};
+
+Map.addLayer(calif_clip, band_viz2, 'S5P NO2 lbs')
+Map.centerObject(area, 4);
+
+var emission_area = ee.Image.pixelArea().reduceRegion({
+  reducer: ee.Reducer.sum(),
+  geometry: area,
+  scale: 1113,
+  maxPixels: 1e13
+});
+
+var ukraine_area = emission_area.values().getInfo()[0];
+
+print("Ukraine Area", ukraine_area);
+
+var mean_NO2_emission = calif_clip.reduceRegion({
+  reducer: ee.Reducer.mean(),
+  geometry: area,
+  scale: 1113,
+  maxPixels: 1e9
+});
+
+//The result is an emission in ton/m2.
+var tot_emission = mean_NO2_emission.values().getInfo()[0];
+
+print("ton/m2", tot_emission);
+
+var tot = ee.Number(tot_emission).multiply(ukraine_area);
+
+print("total emission (ton) of NO2 for Ukrain", tot);
+
+Export.image.toDrive({
+  image: calif_clip,
+  description: "NO2 Mapping ton",
+  scale: 100,
+  region: area,
+  fileFormat: 'GeoTIFF',
+  formatOptions:{
+    cloudOptimized: true
+  }
+});

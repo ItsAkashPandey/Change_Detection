@@ -1,0 +1,121 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[119.94091044339325, 25.630688988619706],
+          [119.94091044339325, 21.891124465663232],
+          [122.20409403714325, 21.891124465663232],
+          [122.20409403714325, 25.630688988619706]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Function to mask clouds based on the pixel_qa band of Landsat 8 SR data.
+ * @param {ee.Image} image input Landsat 8 SR image
+ * @return {ee.Image} cloudmasked Landsat 8 image
+ */
+function maskL8sr1(image) {
+  // Bits 3 and 5 are cloud shadow and cloud, respectively.
+  var cloudShadowBitMask = (1 << 3);
+  var cloudsBitMask = (1 << 5);
+  // Get the pixel QA band.
+  var qa = image.select('pixel_qa');
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+                 .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
+  return image.updateMask(mask);
+}
+
+var dataset1 = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
+                  .filterDate('2020-10-01', '2020-12-31') //NBR1_前期影像
+                  .map(maskL8sr1);
+
+var landsat8_1=dataset1.median().clip(geometry);
+
+var dataset2 = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
+                  .filterDate('2021-04-15', '2021-06-30') //NBR2_後期影像
+                  .map(maskL8sr1);
+
+var landsat8_2=dataset2.median().clip(geometry);
+
+var visParams = {
+  bands: ['B5', 'B4', 'B3'],
+  min: 0,
+  max: 10000,
+  gamma: 1.4,
+};
+Map.setCenter(119.898, 23.962, 11);
+Map.addLayer(landsat8_1, visParams,'landsat8_1');
+Map.addLayer(landsat8_2, visParams,'landsat8_2');
+
+
+var NBR1 = landsat8_1.expression(
+        "(NIR - SWIR2) / (NIR + SWIR2)",
+        {
+          SWIR2: landsat8_1.select("B7"),    //SWIR2
+          NIR: landsat8_1.select("B5"),    // NIR
+          BLUE: landsat8_1.select("B2")    // BLUE
+        });
+
+    Map.addLayer(NBR1, {min: 0, max: 1}, "NBR1");
+
+var NBR2 = landsat8_2.expression(
+        "(NIR - SWIR2) / (NIR + SWIR2)",
+        {
+          SWIR2: landsat8_1.select("B7"),    //SWIR2
+          NIR: landsat8_1.select("B5"),    // NIR
+          BLUE: landsat8_1.select("B2")    // BLUE
+        });
+
+    Map.addLayer(NBR2, {min: 0, max: 1}, "NBR2");
+
+
+var dNBR = NBR1.subtract(NBR2);
+
+    Map.addLayer(dNBR, {min: 0, max: 1}, "dNBR");
+
+
+var colorizedVis = {
+  min: -1.0,
+  max: 1.0,
+    palette: ['000000', 'FFFFFF'],
+};
+
+Map.setCenter(119.898, 23.962, 11);
+Map.addLayer(NBR1, colorizedVis, 'NBR1');
+
+Map.setCenter(119.898, 23.962, 11);
+Map.addLayer(NBR2, colorizedVis, 'NBR2');
+
+Map.setCenter(119.898, 23.962, 11);
+Map.addLayer(dNBR, colorizedVis, 'dNBR');
+
+
+Export.image.toDrive({
+  image:NBR1,
+  description: 'landsat_8_NBR1',
+  scale:30,
+  region:geometry,
+  maxPixels: 10e11
+  });
+
+Export.image.toDrive({
+  image:NBR2,
+  description: 'landsat_8_NBR2',
+  scale:30,
+  region:geometry,
+  maxPixels: 10e11
+  });
+
+Export.image.toDrive({
+  image:dNBR,
+  description: 'landsat_8_dNBR',
+  scale:30,
+  region:geometry,
+  maxPixels: 10e11
+  });
+  
